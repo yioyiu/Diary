@@ -67,7 +67,7 @@ export async function generateMonthlyReview(
 
     // 检查缓存是否有效：如果记录有更新，需要重新生成
     if (cachedSummary && !cacheError && records.length > 0) {
-      const cacheTime = new Date(cachedSummary.updated_at).getTime()
+      const cacheTime = new Date((cachedSummary as any).updated_at).getTime()
       // 检查是否有记录在缓存之后被更新
       const recordUpdateTimes = records.map((r) => new Date(r.updated_at).getTime())
       const latestRecordUpdate = recordUpdateTimes.length > 0 
@@ -77,7 +77,7 @@ export async function generateMonthlyReview(
       // 如果缓存时间晚于所有记录的更新时间，可以使用缓存
       if (cacheTime >= latestRecordUpdate) {
         try {
-          const parsed = JSON.parse(cachedSummary.summary)
+          const parsed = JSON.parse((cachedSummary as any).summary)
           return {
             overview: parsed.overview || '暂无概述',
             takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
@@ -120,7 +120,7 @@ export async function generateMonthlyReview(
             month: monthKey,
             summary: JSON.stringify(review),
             updated_at: new Date().toISOString(),
-          },
+          } as any,
           {
             onConflict: 'user_id,month',
           }

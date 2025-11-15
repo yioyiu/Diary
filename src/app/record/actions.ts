@@ -54,7 +54,7 @@ export async function saveRecord(date: string, content: string) {
     }
 
     // 保存原始内容（有意义的内容）
-    const insertData: Database['public']['Tables']['daily_records']['Insert'] = {
+    const insertData = {
       user_id: user.id,
       date,
       content,
@@ -63,7 +63,7 @@ export async function saveRecord(date: string, content: string) {
     
     const { data: record, error: upsertError } = await supabase
       .from('daily_records')
-      .upsert(insertData, {
+      .upsert(insertData as any, {
         onConflict: 'user_id,date',
       })
       .select()
@@ -83,28 +83,34 @@ export async function saveRecord(date: string, content: string) {
     }
 
     // 更新摘要
-    if (summary) {
-      const { error: updateError } = await supabase
-        .from('daily_records')
-        .update({ summary })
-        .eq('id', record.id)
+    if (summary && record) {
+      const recordId = (record as any).id
+      if (recordId) {
+        const { error: updateError } = await (supabase
+          .from('daily_records') as any)
+          .update({ summary })
+          .eq('id', recordId)
 
-      if (updateError) {
-        console.error('Failed to update summary:', updateError)
+        if (updateError) {
+          console.error('Failed to update summary:', updateError)
+        }
       }
-    } else {
+    } else if (record) {
       // 如果AI没有生成摘要，清空之前的摘要
-      const { error: updateError } = await supabase
-        .from('daily_records')
-        .update({ summary: null })
-        .eq('id', record.id)
+      const recordId = (record as any).id
+      if (recordId) {
+        const { error: updateError } = await (supabase
+          .from('daily_records') as any)
+          .update({ summary: null })
+          .eq('id', recordId)
 
-      if (updateError) {
-        console.error('Failed to update summary:', updateError)
+        if (updateError) {
+          console.error('Failed to update summary:', updateError)
+        }
       }
     }
 
-    return { success: true, summary, record }
+    return { success: true, summary, record: record as DailyRecord | null }
   } catch (error) {
     console.error('Error saving record:', error)
     throw error
