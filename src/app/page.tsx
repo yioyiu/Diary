@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { AuthButton } from './components/AuthButton'
 import { Logo } from './components/Logo'
 
+// 强制动态渲染，因为使用了需要环境变量的组件
+export const dynamic = 'force-dynamic'
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
