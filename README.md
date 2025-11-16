@@ -20,7 +20,7 @@
 - **Supabase** (数据库 + 认证)
 - **ZHIPU AI** (GLM 4.5 FLASH)
 
-#### 快速开始
+# 快速开始
 ### 方法一：
 ## 直接打开网页:7dia.vercel.app
 
