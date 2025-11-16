@@ -73,44 +73,47 @@ export async function saveRecord(date: string, content: string) {
       throw upsertError
     }
 
-    // 生成摘要
-    let summary: string | null = null
-    try {
-      summary = await generateDailySummary(content)
-    } catch (error) {
-      console.error('Failed to generate summary:', error)
-      // 即使 AI 失败，也保存记录
-    }
-
-    // 更新摘要
-    if (summary && record) {
+    // 先返回记录（不等待摘要生成），摘要将在后台异步生成
+    // 这样可以避免阻塞前端操作
+    const returnedRecord = record as DailyRecord | null
+    
+    // 在后台异步生成摘要（不阻塞返回）
+    if (record) {
       const recordId = (record as any).id
       if (recordId) {
-        const { error: updateError } = await (supabase
-          .from('daily_records') as any)
-          .update({ summary })
-          .eq('id', recordId)
+        // 异步生成摘要，不等待结果
+        generateDailySummary(content)
+          .then(async (summary) => {
+            if (summary) {
+              // 更新摘要到数据库
+              const { error: updateError } = await supabase
+                .from('daily_records')
+                .update({ summary })
+                .eq('id', recordId)
 
-        if (updateError) {
-          console.error('Failed to update summary:', updateError)
-        }
-      }
-    } else if (record) {
-      // 如果AI没有生成摘要，清空之前的摘要
-      const recordId = (record as any).id
-      if (recordId) {
-        const { error: updateError } = await (supabase
-          .from('daily_records') as any)
-          .update({ summary: null })
-          .eq('id', recordId)
+              if (updateError) {
+                console.error('Failed to update summary:', updateError)
+              }
+            } else {
+              // 如果AI没有生成摘要，清空之前的摘要
+              const { error: updateError } = await supabase
+                .from('daily_records')
+                .update({ summary: null })
+                .eq('id', recordId)
 
-        if (updateError) {
-          console.error('Failed to update summary:', updateError)
-        }
+              if (updateError) {
+                console.error('Failed to clear summary:', updateError)
+              }
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to generate summary in background:', error)
+            // 即使 AI 失败，也不影响已保存的记录
+          })
       }
     }
 
-    return { success: true, summary, record: record as DailyRecord | null }
+    return { success: true, summary: null, record: returnedRecord }
   } catch (error) {
     console.error('Error saving record:', error)
     throw error

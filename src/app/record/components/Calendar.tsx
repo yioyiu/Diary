@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getMonthlyRecords } from '../actions'
 import { DailyRecord } from '@/types/record'
 import { getDaysInMonth, getFirstDayOfMonth, formatDate, isSameDay } from '@/lib/date'
@@ -13,11 +13,13 @@ interface CalendarProps {
   onDateSelect: (date: string) => void
   refreshKey?: number // 用于触发刷新
   onRecordsLoaded?: (records: Record<string, DailyRecord>) => void // 记录加载完成后的回调
+  updatedRecord?: DailyRecord | null // 外部更新的记录，用于直接更新而不重新加载
 }
 
-export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, onRecordsLoaded }: CalendarProps) {
+export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, onRecordsLoaded, updatedRecord }: CalendarProps) {
   const [records, setRecords] = useState<Record<string, DailyRecord>>({})
   const [loading, setLoading] = useState(true)
+  const lastUpdatedRecordRef = useRef<DailyRecord | null>(null)
 
   useEffect(() => {
     async function loadRecords() {
@@ -111,6 +113,83 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
     loadRecords()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, refreshKey]) // 注意：onRecordsLoaded 不添加到依赖，避免无限循环
+
+  // 处理外部更新的记录（保存后直接更新，不重新加载）
+  useEffect(() => {
+    if (!updatedRecord) {
+      lastUpdatedRecordRef.current = null
+      return
+    }
+
+    // 检查是否是同一个记录的重复更新（通过比较 date 和 updated_at）
+    // 但如果是删除操作（只有 date），每次都处理
+    const isDeleteOp = Object.keys(updatedRecord).length === 1 && 'date' in updatedRecord && !('id' in updatedRecord)
+    
+    if (!isDeleteOp) {
+      const recordKey = updatedRecord.date + (updatedRecord.updated_at || '') + (updatedRecord.id || '')
+      const lastKey = lastUpdatedRecordRef.current 
+        ? lastUpdatedRecordRef.current.date + (lastUpdatedRecordRef.current.updated_at || '') + (lastUpdatedRecordRef.current.id || '')
+        : ''
+      
+      if (recordKey === lastKey) {
+        // 这是重复的更新，忽略
+        return
+      }
+    }
+
+    lastUpdatedRecordRef.current = updatedRecord
+
+    const recordDate = updatedRecord.date
+    const recordYear = new Date(recordDate).getFullYear()
+    const recordMonth = new Date(recordDate).getMonth() + 1
+
+    // 只更新当前显示的月份
+    if (recordYear === year && recordMonth === month) {
+      setRecords(prev => {
+        const newRecords = { ...prev }
+        
+        // 检查是否是删除操作（只有 date 字段，没有 id）
+        const isDeleteOperation = Object.keys(updatedRecord).length === 1 && 'date' in updatedRecord && !('id' in updatedRecord)
+        
+        if (isDeleteOperation) {
+          // 删除记录
+          delete newRecords[recordDate]
+        } else {
+          // 正常保存的记录（有 id 表示是真实记录）
+          // 检查记录是否有内容或摘要
+          const hasContent = updatedRecord.content?.trim() && 
+            /[\u4e00-\u9fa5a-zA-Z0-9]/.test(updatedRecord.content.trim())
+          
+          // 如果有 id，说明是真实记录，应该显示（即使摘要还没生成）
+          if (updatedRecord.id || hasContent || updatedRecord.summary) {
+            // 更新或添加记录
+            newRecords[recordDate] = updatedRecord
+          } else {
+            // 如果内容为空且没有 id，删除记录
+            delete newRecords[recordDate]
+          }
+        }
+
+        // 更新 localStorage 缓存
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+        try {
+          localStorage.setItem(`calendar-${monthKey}`, JSON.stringify({
+            records: newRecords,
+            timestamp: Date.now(),
+          }))
+        } catch (err) {
+          console.error('Failed to update cache:', err)
+        }
+
+        // 通知父组件记录已更新
+        onRecordsLoaded?.(newRecords)
+
+        return newRecords
+      })
+    }
+    // 注意：这里不添加 onRecordsLoaded 到依赖，避免无限循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updatedRecord, year, month])
 
   const days = getDaysInMonth(year, month)
   const firstDay = getFirstDayOfMonth(year, month)

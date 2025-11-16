@@ -14,28 +14,44 @@ export default function RecordPage() {
   const [selectedDate, setSelectedDate] = useState<string>(today)
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1)
-  const [refreshKey, setRefreshKey] = useState(0) // 用于触发日历刷新
+  const [refreshKey, setRefreshKey] = useState(0) // 用于触发日历刷新（仅在必要时使用）
   const [recordsCache, setRecordsCache] = useState<Record<string, DailyRecord>>({}) // 缓存已加载的记录
+  const [updatedRecord, setUpdatedRecord] = useState<DailyRecord | null>(null) // 用于直接更新日历而不重新加载
 
-  const handleDateSelect = (date: string) => {
+  const handleDateSelect = useCallback((date: string) => {
     setSelectedDate(date)
-  }
+  }, [])
 
-  const handleRecordSave = (record?: DailyRecord | null) => {
-    // 保存后刷新日历
-    setRefreshKey(prev => prev + 1)
+  const handleRecordSave = useCallback((record?: DailyRecord | null) => {
     // 如果保存了记录，更新缓存
     if (record && record.date) {
-      setRecordsCache(prev => ({ ...prev, [record.date]: record }))
-    } else if (record === null && selectedDate) {
-      // 如果记录被删除，从缓存中移除
+      // 检查是否是删除操作（只有 date 字段，没有其他字段）
+      if (Object.keys(record).length === 1 && 'date' in record) {
+        // 这是删除操作，从缓存中移除该日期
+        setRecordsCache(prev => {
+          const newCache = { ...prev }
+          delete newCache[record.date]
+          return newCache
+        })
+        // 直接更新日历，不重新加载
+        setUpdatedRecord({ date: record.date } as DailyRecord)
+      } else {
+        // 正常保存，更新缓存
+        setRecordsCache(prev => ({ ...prev, [record.date]: record }))
+        // 直接更新日历，不重新加载
+        setUpdatedRecord(record)
+      }
+    } else if (record === null) {
+      // 如果记录被删除（完全为 null），从缓存中移除当前选中的日期
       setRecordsCache(prev => {
         const newCache = { ...prev }
-        delete newCache[selectedDate]
+        // 由于没有日期信息，我们无法准确删除，所以不清除缓存
+        // 依赖日历刷新来更新显示
         return newCache
       })
     }
-  }
+    // 注意：不再调用 setRefreshKey，避免重新加载整个月份的数据
+  }, [])
 
   // 使用 useCallback 包装回调函数，避免 Calendar 组件无限循环
   const handleRecordsLoaded = useCallback((records: Record<string, DailyRecord>) => {
@@ -43,21 +59,23 @@ export default function RecordPage() {
     setRecordsCache(prev => ({ ...prev, ...records }))
   }, [])
 
-  const handleMonthChange = (delta: number) => {
-    let newMonth = currentMonth + delta
-    let newYear = currentYear
+  const handleMonthChange = useCallback((delta: number) => {
+    setCurrentMonth(prevMonth => {
+      let newMonth = prevMonth + delta
+      let newYear = currentYear
 
-    if (newMonth > 12) {
-      newMonth = 1
-      newYear++
-    } else if (newMonth < 1) {
-      newMonth = 12
-      newYear--
-    }
+      if (newMonth > 12) {
+        newMonth = 1
+        newYear++
+      } else if (newMonth < 1) {
+        newMonth = 12
+        newYear--
+      }
 
-    setCurrentMonth(newMonth)
-    setCurrentYear(newYear)
-  }
+      setCurrentYear(newYear)
+      return newMonth
+    })
+  }, [currentYear])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -126,6 +144,7 @@ export default function RecordPage() {
                   onDateSelect={handleDateSelect}
                   refreshKey={refreshKey}
                   onRecordsLoaded={handleRecordsLoaded}
+                  updatedRecord={updatedRecord}
                 />
               </div>
             </div>
@@ -139,6 +158,7 @@ export default function RecordPage() {
               </div>
               <div className="flex-1 min-h-0 overflow-visible">
                 <Editor 
+                  key={selectedDate} // 添加 key 确保切换日期时组件完全重新初始化
                   date={selectedDate} 
                   onSave={handleRecordSave}
                   cachedRecord={recordsCache[selectedDate] || null}
