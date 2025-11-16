@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { saveRecord, getRecord } from '../actions'
+import { saveRecord, getRecord, updateSummary } from '../actions'
 import { DailyRecord } from '@/types/record'
 import ReactMarkdown from 'react-markdown'
 import { isSameDay } from '@/lib/date'
@@ -19,7 +19,11 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
   const [showPreview, setShowPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generatingSummary, setGeneratingSummary] = useState(false) // 摘要生成中状态
+  const [isEditingSummary, setIsEditingSummary] = useState(false) // 是否正在编辑摘要
+  const [editingSummary, setEditingSummary] = useState('') // 编辑中的摘要内容
+  const [savingSummary, setSavingSummary] = useState(false) // 保存摘要中状态
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const summaryTextareaRef = useRef<HTMLTextAreaElement>(null)
   const summaryCheckIntervalRef = useRef<NodeJS.Timeout | null>(null) // 摘要检查定时器
 
   // 定期检查摘要是否已生成
@@ -339,6 +343,84 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
       .filter((line) => line.trim())
   }, [currentRecord?.summary])
 
+  // 开始编辑摘要
+  const handleStartEditSummary = useCallback(() => {
+    // 如果记录不存在，提示用户先保存内容
+    if (!currentRecord?.id) {
+      setError('请先保存记录内容，然后再编辑摘要')
+      return
+    }
+    
+    // 如果有摘要，使用现有摘要；如果没有，使用空字符串
+    setEditingSummary(currentRecord?.summary || '')
+    setIsEditingSummary(true)
+  }, [currentRecord?.summary, currentRecord?.id])
+
+  // 取消编辑摘要
+  const handleCancelEditSummary = useCallback(() => {
+    setIsEditingSummary(false)
+    setEditingSummary('')
+  }, [])
+
+  // 保存摘要
+  const handleSaveSummary = useCallback(async () => {
+    if (savingSummary) return
+    
+    // 如果记录不存在，提示用户先保存内容
+    if (!currentRecord?.id) {
+      setError('请先保存记录内容，然后再编辑摘要')
+      return
+    }
+    
+    setSavingSummary(true)
+    setError(null)
+
+    try {
+      const summaryToSave = editingSummary.trim() || null
+      const result = await updateSummary(date, summaryToSave)
+      
+      if (result.record) {
+        setCurrentRecord(result.record)
+        setIsEditingSummary(false)
+        setEditingSummary('')
+        // 通知父组件更新缓存
+        onSave?.(result.record)
+      }
+    } catch (error: any) {
+      setError(error.message || '保存摘要失败，请重试')
+      console.error('Failed to save summary:', error)
+    } finally {
+      setSavingSummary(false)
+    }
+  }, [date, editingSummary, savingSummary, onSave, currentRecord?.id])
+
+  // 自动调整摘要输入框高度
+  useEffect(() => {
+    const textarea = summaryTextareaRef.current
+    if (!textarea || !isEditingSummary) return
+
+    const adjustHeight = () => {
+      textarea.style.height = 'auto'
+      const scrollHeight = textarea.scrollHeight
+      const minHeight = 80
+      const maxHeight = 200
+      const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight)
+      textarea.style.height = `${newHeight}px`
+      
+      if (scrollHeight > maxHeight) {
+        textarea.style.overflowY = 'auto'
+      } else {
+        textarea.style.overflowY = 'hidden'
+      }
+    }
+
+    const timer = setTimeout(() => {
+      requestAnimationFrame(adjustHeight)
+    }, 50)
+
+    return () => clearTimeout(timer)
+  }, [editingSummary, isEditingSummary])
+
   // 优化事件处理函数
   const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value)
@@ -394,10 +476,19 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
         </div>
       )}
 
-      {summaryPoints.length > 0 && (
+      {summaryPoints.length > 0 && !isEditingSummary && (
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-          <div className="text-sm font-medium text-blue-900 mb-2">
-            摘要：
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium text-blue-900">
+              摘要：
+            </div>
+            <button
+              onClick={handleStartEditSummary}
+              className="text-xs text-blue-600 hover:text-blue-800 underline"
+              title="编辑摘要"
+            >
+              编辑
+            </button>
           </div>
           <div className="text-sm text-blue-700 space-y-1">
             {summaryPoints.map((point, index) => (
@@ -406,6 +497,55 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
                 <span>{point.trim()}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {isEditingSummary && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+          <div className="text-sm font-medium text-blue-900 mb-2">
+            编辑摘要：
+          </div>
+          <textarea
+            ref={summaryTextareaRef}
+            value={editingSummary}
+            onChange={(e) => setEditingSummary(e.target.value)}
+            placeholder="每行一个要点，用换行符分隔..."
+            className="w-full p-2 border border-blue-300 rounded text-sm text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            style={{ minHeight: '80px' }}
+          />
+          <div className="mt-2 flex gap-2 justify-end">
+            <button
+              onClick={handleCancelEditSummary}
+              disabled={savingSummary}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSaveSummary}
+              disabled={savingSummary}
+              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savingSummary ? '保存中...' : '保存'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {currentRecord && currentRecord.id && !currentRecord.summary && !generatingSummary && !isEditingSummary && (
+        <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              暂无摘要
+            </div>
+            <button
+              onClick={handleStartEditSummary}
+              className="text-xs text-blue-600 hover:text-blue-800 underline"
+              title="添加摘要"
+            >
+              添加摘要
+            </button>
           </div>
         </div>
       )}

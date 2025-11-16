@@ -214,3 +214,49 @@ export async function getMonthlyRecords(
   return (data || []) as DailyRecord[]
 }
 
+export async function updateSummary(date: string, summary: string | null) {
+  const supabase = createClient()
+  
+  // 先尝试获取 session
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  // 如果 session 不存在，再尝试 getUser
+  let user = session?.user
+  if (!user) {
+    const {
+      data: { user: fetchedUser },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !fetchedUser) {
+      throw new Error('未登录，请先登录')
+    }
+    user = fetchedUser
+  }
+
+  if (!user) {
+    throw new Error('未登录，请先登录')
+  }
+
+  try {
+    const { data: record, error: updateError } = await supabase
+      .from('daily_records')
+      .update({ summary })
+      .eq('user_id', user.id)
+      .eq('date', date)
+      .select()
+      .single()
+
+    if (updateError) {
+      throw updateError
+    }
+
+    return { success: true, record: record as DailyRecord | null }
+  } catch (error) {
+    console.error('Error updating summary:', error)
+    throw error
+  }
+}
+
