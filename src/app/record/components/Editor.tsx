@@ -108,7 +108,7 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
       async function verifyCache() {
         try {
           const record = await getRecord(date)
-          if (record) {
+          if (record && cachedRecord) {
             // 如果记录有更新，更新内容
             if (record.updated_at !== cachedRecord.updated_at || record.content !== cachedRecord.content) {
               setContent(record.content)
@@ -128,7 +128,7 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
               setCurrentRecord(record)
               setGeneratingSummary(false)
             }
-          } else {
+          } else if (!record) {
             // 如果记录被删除，清空内容
             setContent('')
             setCurrentRecord(null)
