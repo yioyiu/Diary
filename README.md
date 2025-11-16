@@ -61,7 +61,7 @@ cp env.example .env.local
 npm run dev
 ```
 
-打开 [http://localhost:3000](http://localhost:3000) 查看应用。
+打开 [http://localhost:3001](http://localhost:3001) 查看应用。
 
 ## 项目结构
 
