@@ -21,6 +21,53 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
 
   useEffect(() => {
     async function loadRecords() {
+      const monthKey = `${year}-${String(month).padStart(2, '0')}`
+      
+      // 先尝试从 localStorage 加载缓存
+      try {
+        const cached = localStorage.getItem(`calendar-${monthKey}`)
+        if (cached) {
+          const cachedData = JSON.parse(cached)
+          // 检查缓存是否过期（24小时）
+          const cacheTime = cachedData.timestamp || 0
+          const now = Date.now()
+          if (now - cacheTime < 24 * 60 * 60 * 1000) {
+            // 缓存有效，立即显示
+            setRecords(cachedData.records || {})
+            setLoading(false)
+            onRecordsLoaded?.(cachedData.records || {})
+            
+            // 在后台验证并更新缓存
+            try {
+              const monthlyRecords = await getMonthlyRecords(year, month)
+              const recordsMap: Record<string, DailyRecord> = {}
+              monthlyRecords.forEach((record) => {
+                const hasContent = record.content?.trim() && 
+                  /[\u4e00-\u9fa5a-zA-Z0-9]/.test(record.content.trim())
+                if (hasContent || record.summary) {
+                  recordsMap[record.date] = record
+                }
+              })
+              
+              // 更新缓存
+              localStorage.setItem(`calendar-${monthKey}`, JSON.stringify({
+                records: recordsMap,
+                timestamp: Date.now(),
+              }))
+              
+              setRecords(recordsMap)
+              onRecordsLoaded?.(recordsMap)
+            } catch (err) {
+              console.error('Failed to update cache:', err)
+            }
+            return
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load cache:', err)
+      }
+      
+      // 没有缓存或缓存过期，加载新数据
       setLoading(true)
       try {
         const monthlyRecords = await getMonthlyRecords(year, month)
@@ -35,6 +82,17 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
           }
         })
         setRecords(recordsMap)
+        
+        // 保存到缓存
+        try {
+          localStorage.setItem(`calendar-${monthKey}`, JSON.stringify({
+            records: recordsMap,
+            timestamp: Date.now(),
+          }))
+        } catch (err) {
+          console.error('Failed to save cache:', err)
+        }
+        
         // 通知父组件记录已加载
         onRecordsLoaded?.(recordsMap)
       } catch (error: any) {
@@ -51,7 +109,8 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
     }
 
     loadRecords()
-  }, [year, month, refreshKey]) // 添加 refreshKey 作为依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month, refreshKey]) // 注意：onRecordsLoaded 不添加到依赖，避免无限循环
 
   const days = getDaysInMonth(year, month)
   const firstDay = getFirstDayOfMonth(year, month)
@@ -59,6 +118,22 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
 
   // 填充前面的空白
   const emptyDays = Array.from({ length: firstDay }, (_, i) => i)
+
+  // 显示加载状态
+  if (loading) {
+    return (
+      <div className="w-full">
+        <div className="mb-2">
+          <h2 className="text-base sm:text-lg font-semibold">
+            {year}年{month}月
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-gray-500 text-sm">加载中...</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="w-full">

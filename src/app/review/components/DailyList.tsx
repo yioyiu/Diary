@@ -38,6 +38,11 @@ export function DailyList({ records, loading }: DailyListProps) {
         {records.map((record) => {
           const date = new Date(record.date)
           const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`
+          
+          // 将摘要按换行符分割成多个要点
+          const summaryPoints = record.summary 
+            ? record.summary.split('\n').filter(line => line.trim())
+            : []
 
           return (
             <div
@@ -49,9 +54,16 @@ export function DailyList({ records, loading }: DailyListProps) {
                   <div className="font-medium text-gray-900 mb-1">
                     {dateStr}
                   </div>
-                  {record.summary ? (
-                    <div className="text-sm text-gray-700">
-                      {record.summary}
+                  {summaryPoints.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                      {summaryPoints.map((point, index) => (
+                        <span key={index} className="flex items-center">
+                          <span>{point.trim()}</span>
+                          {index < summaryPoints.length - 1 && (
+                            <span className="mx-2 text-gray-300">|</span>
+                          )}
+                        </span>
+                      ))}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500 italic">

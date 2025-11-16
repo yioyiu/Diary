@@ -28,18 +28,43 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
       setCurrentRecord(cachedRecord)
       setError(null)
       setShowPreview(false)
-    } else {
-      // 如果没有缓存，先尝试从 localStorage 恢复草稿
-      const draft = localStorage.getItem(`draft-${date}`)
-      if (draft) {
-        setContent(draft)
-      } else {
-        setContent('')
+      
+      // 在后台验证缓存是否有效（不阻塞UI）
+      async function verifyCache() {
+        try {
+          const record = await getRecord(date)
+          if (record) {
+            // 如果记录有更新，更新内容
+            if (record.updated_at !== cachedRecord.updated_at || record.content !== cachedRecord.content) {
+              setContent(record.content)
+              setCurrentRecord(record)
+            }
+          } else {
+            // 如果记录被删除，清空内容
+            setContent('')
+            setCurrentRecord(null)
+          }
+        } catch (error: any) {
+          // 验证失败不影响已显示的内容
+          console.error('Failed to verify cache:', error)
+        }
       }
-      setCurrentRecord(null)
-      setError(null)
-      setShowPreview(false)
+      
+      // 延迟验证，不阻塞初始渲染
+      setTimeout(verifyCache, 100)
+      return
     }
+    
+    // 如果没有缓存，先尝试从 localStorage 恢复草稿
+    const draft = localStorage.getItem(`draft-${date}`)
+    if (draft) {
+      setContent(draft)
+    } else {
+      setContent('')
+    }
+    setCurrentRecord(null)
+    setError(null)
+    setShowPreview(false)
 
     // 然后异步加载最新数据（确保数据是最新的）
     async function loadRecord() {
@@ -118,11 +143,27 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
       if (result.record) {
         setCurrentRecord(result.record)
         localStorage.removeItem(`draft-${date}`)
+        
+        // 清除相关月份的日历缓存，确保显示最新数据
+        const dateObj = new Date(date)
+        const year = dateObj.getFullYear()
+        const month = dateObj.getMonth() + 1
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+        localStorage.removeItem(`calendar-${monthKey}`)
+        
         onSave?.(result.record) // 通知父组件刷新日历和更新缓存
       } else {
         // 如果记录被删除（保存空内容），清空当前记录状态
         setCurrentRecord(null)
         localStorage.removeItem(`draft-${date}`)
+        
+        // 清除相关月份的日历缓存
+        const dateObj = new Date(date)
+        const year = dateObj.getFullYear()
+        const month = dateObj.getMonth() + 1
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`
+        localStorage.removeItem(`calendar-${monthKey}`)
+        
         onSave?.(null) // 通知父组件刷新日历和清除缓存
       }
     } catch (error: any) {

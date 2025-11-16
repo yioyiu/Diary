@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Calendar } from './components/Calendar'
 import { Editor } from './components/Editor'
 import Link from 'next/link'
@@ -36,6 +36,12 @@ export default function RecordPage() {
       })
     }
   }
+
+  // 使用 useCallback 包装回调函数，避免 Calendar 组件无限循环
+  const handleRecordsLoaded = useCallback((records: Record<string, DailyRecord>) => {
+    // 更新缓存
+    setRecordsCache(prev => ({ ...prev, ...records }))
+  }, [])
 
   const handleMonthChange = (delta: number) => {
     let newMonth = currentMonth + delta
@@ -119,10 +125,7 @@ export default function RecordPage() {
                   selectedDate={selectedDate}
                   onDateSelect={handleDateSelect}
                   refreshKey={refreshKey}
-                  onRecordsLoaded={(records) => {
-                    // 更新缓存
-                    setRecordsCache(prev => ({ ...prev, ...records }))
-                  }}
+                  onRecordsLoaded={handleRecordsLoaded}
                 />
               </div>
             </div>
