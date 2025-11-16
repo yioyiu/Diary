@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function AuthPage() {
+function AuthForm() {
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -160,6 +160,23 @@ export default function AuthPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold mb-2">每日记录</h1>
+            <p className="text-gray-600">加载中...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <AuthForm />
+    </Suspense>
   )
 }
 
