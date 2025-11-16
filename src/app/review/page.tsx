@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { SummaryCard } from './components/SummaryCard'
 import { DailyList } from './components/DailyList'
 import { Charts } from './components/Charts'
@@ -9,12 +9,20 @@ import {
   getMonthlyRecordsForReview,
   generateMonthlyReview,
   extractKeywordsFromRecords,
+  getCachedMonthlySummary,
 } from './actions'
 import { MonthlySummary } from '@/types/summary'
 import { DailyRecord } from '@/types/record'
 import Link from 'next/link'
 import { AuthButton } from '../components/AuthButton'
 import { Logo } from '../components/Logo'
+
+// 缓存类型定义
+interface MonthDataCache {
+  records: DailyRecord[]
+  keywords: Array<{ word: string; count: number }>
+  recordsHash: string // 用于验证缓存是否有效
+}
 
 export default function ReviewPage() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
@@ -29,27 +37,151 @@ export default function ReviewPage() {
   const [showMonthSelector, setShowMonthSelector] = useState(false)
   const [selectedYear, setSelectedYear] = useState(currentYear)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  
+  // 客户端缓存：存储已加载的月份数据（使用 useRef 避免触发重新渲染）
+  const dataCacheRef = useRef<Record<string, MonthDataCache>>({})
+
+  // 从 localStorage 加载缓存
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('review-data-cache')
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        dataCacheRef.current = parsed
+      }
+    } catch (err) {
+      console.error('Failed to load cache from localStorage:', err)
+    }
+  }, [])
+
+  // 保存缓存到 localStorage
+  const saveCacheToStorage = (cache: Record<string, MonthDataCache>) => {
+    try {
+      localStorage.setItem('review-data-cache', JSON.stringify(cache))
+    } catch (err) {
+      console.error('Failed to save cache to localStorage:', err)
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
       setLoading(true)
       setError(null)
+      setSummary(null) // 切换月份时先清空总结
+      
+      const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`
+      
+      // 检查缓存（先从内存，再从 localStorage）
+      let cachedData = dataCacheRef.current[monthKey]
+      
+      // 如果内存缓存不存在，尝试从 localStorage 加载
+      if (!cachedData) {
+        try {
+          const stored = localStorage.getItem('review-data-cache')
+          if (stored) {
+            const parsed = JSON.parse(stored)
+            dataCacheRef.current = parsed
+            cachedData = parsed[monthKey]
+          }
+        } catch (err) {
+          console.error('Failed to load cache from localStorage:', err)
+        }
+      }
+      
+      // 如果缓存存在，先使用缓存数据（立即显示）
+      if (cachedData) {
+        setRecords(cachedData.records)
+        setKeywords(cachedData.keywords)
+        setLoading(false)
+        
+        // 在后台验证缓存是否有效
+        try {
+          const monthlyRecords = await getMonthlyRecordsForReview(
+            currentYear,
+            currentMonth
+          )
+          
+          // 生成记录哈希（基于记录的ID和更新时间）
+          const recordsHash = monthlyRecords
+            .map(r => `${r.id}-${r.updated_at}`)
+            .sort()
+            .join('|')
+          
+          // 如果缓存有效，不需要更新
+          if (cachedData.recordsHash === recordsHash) {
+            return
+          }
+          
+          // 缓存已失效，更新数据
+          setRecords(monthlyRecords)
+          
+          // 重新提取关键词
+          if (monthlyRecords.length > 0) {
+            setExtractingKeywords(true)
+            try {
+              const extractedKeywords = await extractKeywordsFromRecords(monthlyRecords)
+              setKeywords(extractedKeywords)
+              
+              // 更新缓存
+              dataCacheRef.current[monthKey] = {
+                records: monthlyRecords,
+                keywords: extractedKeywords,
+                recordsHash,
+              }
+              // 保存到 localStorage
+              saveCacheToStorage(dataCacheRef.current)
+            } catch (err) {
+              console.error('Failed to extract keywords:', err)
+            } finally {
+              setExtractingKeywords(false)
+            }
+          } else {
+            setKeywords([])
+          }
+        } catch (err) {
+          console.error('Failed to verify cache:', err)
+        }
+        return
+      }
+      
+      // 缓存不存在，加载新数据
       try {
         const monthlyRecords = await getMonthlyRecordsForReview(
           currentYear,
           currentMonth
         )
+        
+        // 先设置 extractingKeywords 为 true，避免显示"数据不足"
+        if (monthlyRecords.length > 0) {
+          setExtractingKeywords(true)
+        }
+        
         setRecords(monthlyRecords)
+        
+        // 生成记录哈希
+        const recordsHash = monthlyRecords
+          .map(r => `${r.id}-${r.updated_at}`)
+          .sort()
+          .join('|')
         
         // 自动从摘要中提取关键词
         if (monthlyRecords.length > 0) {
-          setExtractingKeywords(true)
           try {
             const extractedKeywords = await extractKeywordsFromRecords(monthlyRecords)
             setKeywords(extractedKeywords)
+            
+            // 保存到缓存
+            dataCacheRef.current[monthKey] = {
+              records: monthlyRecords,
+              keywords: extractedKeywords,
+              recordsHash,
+            }
+            // 保存到 localStorage
+            saveCacheToStorage(dataCacheRef.current)
           } catch (err) {
             console.error('Failed to extract keywords:', err)
             // 提取关键词失败不影响主流程
+            setKeywords([])
           } finally {
             setExtractingKeywords(false)
           }
@@ -111,7 +243,7 @@ export default function ReviewPage() {
 
     setCurrentMonth(newMonth)
     setCurrentYear(newYear)
-    setSummary(null) // 切换月份时清空总结
+    // 注意：summary 会在 useEffect 中自动加载或清空
   }
 
   return (

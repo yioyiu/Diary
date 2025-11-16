@@ -114,6 +114,7 @@ export function Charts({ records, summary, keywords: extractedKeywords, extracti
       .map(([word, count]) => ({ word, count }))
   }, [records, summary, extractedKeywords])
 
+  // 如果正在提取关键词，显示加载状态
   if (extractingKeywords) {
     return (
       <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
@@ -125,6 +126,20 @@ export function Charts({ records, summary, keywords: extractedKeywords, extracti
     )
   }
 
+  // 如果有记录但关键词为空，应该显示"正在提取关键词..."而不是"数据不足"
+  // 因为关键词是异步提取的，需要时间
+  if (records.length > 0 && keywords.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+        <h2 className="text-2xl font-bold mb-4">主题词云</h2>
+        <p className="text-gray-500 text-center py-8">
+          正在提取关键词...
+        </p>
+      </div>
+    )
+  }
+
+  // 只有在没有记录的情况下才显示"数据不足"
   if (keywords.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
