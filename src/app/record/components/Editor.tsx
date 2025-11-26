@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { saveRecord, getRecord, updateSummary } from '../actions'
+import { generateSummary } from '../actions'
 import { DailyRecord } from '@/types/record'
 import ReactMarkdown from 'react-markdown'
 import { isSameDay } from '@/lib/date'
+import {
+  getRecord,
+  saveRecord,
+  deleteRecord,
+  updateRecordSummary,
+} from '@/lib/storage'
 
 interface EditorProps {
   date: string
