@@ -452,6 +452,29 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
     setContent(e.target.value)
   }, [])
 
+  // 文本框按键处理：Tab 不再跳到下一个按钮，而是在当前光标处插入缩进
+  const handleContentKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+
+      const target = e.currentTarget
+      const start = target.selectionStart
+      const end = target.selectionEnd
+
+      // 在当前选区插入 2 个空格（你可以改成 '\t' 或 4 个空格）
+      const insertText = '  '
+      const newValue = content.slice(0, start) + insertText + content.slice(end)
+      setContent(newValue)
+
+      // 还原光标位置到插入内容之后
+      requestAnimationFrame(() => {
+        const pos = start + insertText.length
+        target.selectionStart = pos
+        target.selectionEnd = pos
+      })
+    }
+  }, [content])
+
   const handleTogglePreview = useCallback(() => {
     setShowPreview(prev => !prev)
   }, [])
@@ -482,6 +505,7 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
             ref={textareaRef}
             value={content}
             onChange={handleContentChange}
+            onKeyDown={handleContentKeyDown}
             placeholder="记录今天的学习和想法...&#10;&#10;支持 Markdown 格式"
             className="flex-1 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 bg-white"
             style={{ minHeight: '300px' }}
