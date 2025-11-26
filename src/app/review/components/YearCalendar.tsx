@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { DailyRecord } from '@/types/record'
-import { getYearRecords } from '../actions'
+import { getYearRecords } from '@/lib/storage'
 import { RecordModal } from '@/app/record/components/RecordModal'
 
 interface YearCalendarProps {
@@ -16,10 +16,10 @@ export function YearCalendar({ currentYear }: YearCalendarProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
-    async function loadYearRecords() {
+    function loadYearRecords() {
       setLoading(true)
       try {
-        const yearRecords = await getYearRecords(currentYear)
+        const yearRecords = getYearRecords(currentYear)
         const recordsMap: Record<string, DailyRecord> = {}
         yearRecords.forEach((record) => {
           // 只添加有内容的记录，或者有摘要的记录

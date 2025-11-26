@@ -6,16 +6,44 @@ import { DailyList } from './components/DailyList'
 import { Charts } from './components/Charts'
 import { YearCalendar } from './components/YearCalendar'
 import {
-  getMonthlyRecordsForReview,
-  generateMonthlyReview,
-  extractKeywordsFromRecords,
-  getCachedMonthlySummary,
+  generateMonthlyReviewFromContent,
 } from './actions'
+import {
+  getMonthlyRecords,
+  getYearRecords,
+  getMonthlySummary,
+  saveMonthlySummary,
+} from '@/lib/storage'
 import { MonthlySummary } from '@/types/summary'
 import { DailyRecord } from '@/types/record'
 import Link from 'next/link'
-import { AuthButton } from '../components/AuthButton'
 import { Logo } from '../components/Logo'
+
+// 从摘要中提取关键词（简单版本，不使用 AI）
+function extractKeywordsFromSummaries(records: DailyRecord[]): Array<{ word: string; count: number }> {
+  const keywordMap = new Map<string, number>()
+  
+  records.forEach(record => {
+    if (record.summary) {
+      const points = record.summary.split('\n').filter(p => p.trim())
+      points.forEach(point => {
+        // 简单的关键词提取：取每行的核心内容（去掉常见动词）
+        const cleaned = point.trim()
+          .replace(/^(学习了|复习了|完成了|解决了|了解了|掌握了)\s*/, '')
+          .trim()
+        
+        if (cleaned.length > 0 && cleaned.length < 30) {
+          keywordMap.set(cleaned, (keywordMap.get(cleaned) || 0) + 1)
+        }
+      })
+    }
+  })
+  
+  return Array.from(keywordMap.entries())
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20) // 最多返回20个关键词
+}
 
 // 缓存类型定义
 interface MonthDataCache {
@@ -96,10 +124,7 @@ export default function ReviewPage() {
         
         // 在后台验证缓存是否有效
         try {
-          const monthlyRecords = await getMonthlyRecordsForReview(
-            currentYear,
-            currentMonth
-          )
+          const monthlyRecords = getMonthlyRecords(currentYear, currentMonth)
           
           // 生成记录哈希（基于记录的ID和更新时间）
           const recordsHash = monthlyRecords
@@ -115,26 +140,19 @@ export default function ReviewPage() {
           // 缓存已失效，更新数据
           setRecords(monthlyRecords)
           
-          // 重新提取关键词
+          // 从摘要中提取关键词（简单提取，不使用 AI）
           if (monthlyRecords.length > 0) {
-            setExtractingKeywords(true)
-            try {
-              const extractedKeywords = await extractKeywordsFromRecords(monthlyRecords)
-              setKeywords(extractedKeywords)
-              
-              // 更新缓存
-              dataCacheRef.current[monthKey] = {
-                records: monthlyRecords,
-                keywords: extractedKeywords,
-                recordsHash,
-              }
-              // 保存到 localStorage
-              saveCacheToStorage(dataCacheRef.current)
-            } catch (err) {
-              console.error('Failed to extract keywords:', err)
-            } finally {
-              setExtractingKeywords(false)
+            const extractedKeywords = extractKeywordsFromSummaries(monthlyRecords)
+            setKeywords(extractedKeywords)
+            
+            // 更新缓存
+            dataCacheRef.current[monthKey] = {
+              records: monthlyRecords,
+              keywords: extractedKeywords,
+              recordsHash,
             }
+            // 保存到 localStorage
+            saveCacheToStorage(dataCacheRef.current)
           } else {
             setKeywords([])
           }
@@ -146,15 +164,7 @@ export default function ReviewPage() {
       
       // 缓存不存在，加载新数据
       try {
-        const monthlyRecords = await getMonthlyRecordsForReview(
-          currentYear,
-          currentMonth
-        )
-        
-        // 先设置 extractingKeywords 为 true，避免显示"数据不足"
-        if (monthlyRecords.length > 0) {
-          setExtractingKeywords(true)
-        }
+        const monthlyRecords = getMonthlyRecords(currentYear, currentMonth)
         
         setRecords(monthlyRecords)
         
@@ -164,27 +174,19 @@ export default function ReviewPage() {
           .sort()
           .join('|')
         
-        // 自动从摘要中提取关键词
+        // 从摘要中提取关键词（简单提取，不使用 AI）
         if (monthlyRecords.length > 0) {
-          try {
-            const extractedKeywords = await extractKeywordsFromRecords(monthlyRecords)
-            setKeywords(extractedKeywords)
-            
-            // 保存到缓存
-            dataCacheRef.current[monthKey] = {
-              records: monthlyRecords,
-              keywords: extractedKeywords,
-              recordsHash,
-            }
-            // 保存到 localStorage
-            saveCacheToStorage(dataCacheRef.current)
-          } catch (err) {
-            console.error('Failed to extract keywords:', err)
-            // 提取关键词失败不影响主流程
-            setKeywords([])
-          } finally {
-            setExtractingKeywords(false)
+          const extractedKeywords = extractKeywordsFromSummaries(monthlyRecords)
+          setKeywords(extractedKeywords)
+          
+          // 保存到缓存
+          dataCacheRef.current[monthKey] = {
+            records: monthlyRecords,
+            keywords: extractedKeywords,
+            recordsHash,
           }
+          // 保存到 localStorage
+          saveCacheToStorage(dataCacheRef.current)
         } else {
           setKeywords([])
         }
@@ -213,11 +215,35 @@ export default function ReviewPage() {
     setGenerating(true)
     setError(null)
     try {
-      const result = await generateMonthlyReview(selectedYear, selectedMonth)
+      // 获取该月的所有记录
+      const monthlyRecords = getMonthlyRecords(selectedYear, selectedMonth)
+      
+      if (monthlyRecords.length === 0) {
+        setError('本月暂无记录，无法生成总结')
+        setGenerating(false)
+        return
+      }
+
+      // 合并所有内容，按日期排序
+      const mergedContent = monthlyRecords
+        .filter((r) => r.content && r.content.trim().length > 0)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((r) => {
+          const date = new Date(r.date)
+          const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`
+          return `【${dateStr}】\n${r.content}`
+        })
+        .join('\n\n')
+
+      // 调用 Server Action 生成总结
+      const result = await generateMonthlyReviewFromContent(mergedContent, selectedYear, selectedMonth)
+      
       if ('error' in result) {
         setError(result.error)
       } else {
         setSummary(result)
+        // 保存到本地存储
+        saveMonthlySummary(selectedYear, selectedMonth, result)
       }
     } catch (err: any) {
       // 格式化错误信息
@@ -266,9 +292,14 @@ export default function ReviewPage() {
               >
                 回顾
               </Link>
+              <Link
+                href="/settings"
+                className="text-gray-600 hover:text-gray-900 text-xl"
+              >
+                设置
+              </Link>
             </div>
             <div className="flex items-center">
-              <AuthButton />
             </div>
           </div>
         </div>

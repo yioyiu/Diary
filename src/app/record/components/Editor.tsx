@@ -197,12 +197,7 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
           setGeneratingSummary(false)
         }
       } catch (error: any) {
-        // 如果是认证错误，显示给用户
-        if (error?.message?.includes('未登录')) {
-          setError('未登录，请先登录')
-        } else {
-          console.error('Failed to load record:', error)
-        }
+        console.error('Failed to load record:', error)
         // 出错时检查是否有草稿，如果有则显示草稿
         const draft = localStorage.getItem(`draft-${date}`)
         if (draft) {
@@ -271,26 +266,16 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
     setError(null)
 
     try {
-      const result = await saveRecord(date, content)
-      if (result.record) {
-        setCurrentRecord(result.record)
-        localStorage.removeItem(`draft-${date}`)
-        
-        // 不再清除缓存，而是直接更新（由 Calendar 组件处理）
-        onSave?.(result.record) // 通知父组件更新日历和缓存
-        
-        // 如果记录有内容但没有摘要，开始定期检查摘要是否生成
-        const hasContent = result.record.content?.trim() && 
-          /[\u4e00-\u9fa5a-zA-Z0-9]/.test(result.record.content.trim())
-        if (hasContent && !result.record.summary) {
-          setGeneratingSummary(true)
-          // 开始定期检查摘要
-          startSummaryCheck(result.record.id)
-        } else {
-          setGeneratingSummary(false)
-        }
-      } else {
-        // 如果记录被删除（保存空内容），清空当前记录状态
+      const trimmedContent = content.trim()
+      // 检查内容是否为空或仅有空格、符号
+      const hasMeaningfulContent = trimmedContent.length > 0 && 
+        /[\u4e00-\u9fa5a-zA-Z0-9]/.test(trimmedContent) // 至少包含中文、英文或数字
+      
+      let record: DailyRecord | null = null
+      
+      // 如果内容为空或仅有空格/符号，删除记录
+      if (!hasMeaningfulContent) {
+        deleteRecord(date)
         setCurrentRecord(null)
         localStorage.removeItem(`draft-${date}`)
         setGeneratingSummary(false)
@@ -299,10 +284,45 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
           clearInterval(summaryCheckIntervalRef.current)
           summaryCheckIntervalRef.current = null
         }
+        // 通知父组件更新日历和缓存
+        onSave?.({ date } as DailyRecord | null)
+      } else {
+        // 保存原始内容（有意义的内容）
+        record = saveRecord(date, content)
+        setCurrentRecord(record)
+        localStorage.removeItem(`draft-${date}`)
         
-        // 不再清除缓存，而是直接更新（由 Calendar 组件处理）
-        // 传递一个包含 date 的占位对象，让父组件知道是哪个日期被删除了
-        onSave?.({ date } as DailyRecord | null) // 通知父组件更新日历和缓存
+        // 通知父组件更新日历和缓存
+        onSave?.(record)
+        
+        // 如果记录有内容但没有摘要，异步生成摘要
+        if (!record.summary) {
+          setGeneratingSummary(true)
+          // 在后台异步生成摘要
+          generateSummary(content)
+            .then((summary) => {
+              if (summary) {
+                // 更新摘要到本地存储
+                const updatedRecord = updateRecordSummary(date, summary)
+                if (updatedRecord) {
+                  setCurrentRecord(updatedRecord)
+                  // 通知父组件更新缓存
+                  onSave?.(updatedRecord)
+                }
+              } else {
+                // 如果AI没有生成摘要，清空之前的摘要
+                updateRecordSummary(date, null)
+              }
+              setGeneratingSummary(false)
+            })
+            .catch((error) => {
+              console.error('Failed to generate summary in background:', error)
+              setGeneratingSummary(false)
+              // 即使 AI 失败，也不影响已保存的记录
+            })
+        } else {
+          setGeneratingSummary(false)
+        }
       }
     } catch (error: any) {
       setError(error.message || '保存失败，请重试')
@@ -311,7 +331,7 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
     } finally {
       setSaving(false)
     }
-  }, [date, content, saving, onSave, startSummaryCheck])
+  }, [date, content, saving, onSave])
 
   const handleClear = useCallback(() => {
     if (confirm('确定要清空内容吗？')) {
@@ -377,14 +397,14 @@ export function Editor({ date, onSave, cachedRecord }: EditorProps) {
 
     try {
       const summaryToSave = editingSummary.trim() || null
-      const result = await updateSummary(date, summaryToSave)
+      const updatedRecord = updateRecordSummary(date, summaryToSave)
       
-      if (result.record) {
-        setCurrentRecord(result.record)
+      if (updatedRecord) {
+        setCurrentRecord(updatedRecord)
         setIsEditingSummary(false)
         setEditingSummary('')
         // 通知父组件更新缓存
-        onSave?.(result.record)
+        onSave?.(updatedRecord)
       }
     } catch (error: any) {
       setError(error.message || '保存摘要失败，请重试')

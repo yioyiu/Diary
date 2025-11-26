@@ -5,7 +5,6 @@ import { Calendar } from './components/Calendar'
 import { Editor } from './components/Editor'
 import Link from 'next/link'
 import { getToday } from '@/lib/date'
-import { AuthButton } from '../components/AuthButton'
 import { Logo } from '../components/Logo'
 import { DailyRecord } from '@/types/record'
 
@@ -97,9 +96,14 @@ export default function RecordPage() {
               >
                 回顾
               </Link>
+              <Link
+                href="/settings"
+                className="text-gray-600 hover:text-gray-900 text-xl"
+              >
+                设置
+              </Link>
             </div>
             <div className="flex items-center">
-              <AuthButton />
             </div>
           </div>
         </div>

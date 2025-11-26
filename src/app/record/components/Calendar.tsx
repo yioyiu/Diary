@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { getMonthlyRecords } from '../actions'
+import { getMonthlyRecords } from '@/lib/storage'
 import { DailyRecord } from '@/types/record'
 import { getDaysInMonth, getFirstDayOfMonth, formatDate, isSameDay } from '@/lib/date'
 import { cn } from '@/lib/utils'
@@ -98,13 +98,8 @@ export function Calendar({ year, month, selectedDate, onDateSelect, refreshKey, 
         // 通知父组件记录已加载
         onRecordsLoaded?.(recordsMap)
       } catch (error: any) {
-        // 如果是认证错误，静默处理（不显示错误，因为用户可能正在登录）
-        if (error?.message?.includes('未登录')) {
-          console.warn('User not authenticated, calendar will be empty')
-          setRecords({})
-        } else {
-          console.error('Failed to load records:', error)
-        }
+        console.error('Failed to load records:', error)
+        setRecords({})
       } finally {
         setLoading(false)
       }

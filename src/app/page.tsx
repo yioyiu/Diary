@@ -1,50 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase/client'
-import { AuthButton } from './components/AuthButton'
 import { Logo } from './components/Logo'
-import type { User, Session } from '@supabase/supabase-js'
 
 export default function Home() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
   const router = useRouter()
-
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        setUser(session?.user ?? null)
-      } catch (error) {
-        console.error('Auth check error:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    checkAuth()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: any, session: Session | null) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
-    if (!user) {
-      e.preventDefault()
-      router.push(`/auth?redirect=${path}`)
-    }
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -52,7 +12,6 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Logo />
-            <AuthButton />
           </div>
         </div>
       </nav>
@@ -64,10 +23,9 @@ export default function Home() {
             学习/想法记录工具
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <a
               href="/record"
-              onClick={(e) => handleLinkClick(e, '/record')}
               className="block p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 transition-colors bg-white cursor-pointer"
             >
               <h2 className="text-2xl font-semibold mb-2">📝 记录</h2>
@@ -78,12 +36,21 @@ export default function Home() {
 
             <a
               href="/review"
-              onClick={(e) => handleLinkClick(e, '/review')}
               className="block p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 transition-colors bg-white cursor-pointer"
             >
               <h2 className="text-2xl font-semibold mb-2">📊 回顾</h2>
               <p className="text-gray-600">
                 查看月度学习总结和成长报告
+              </p>
+            </a>
+
+            <a
+              href="/settings"
+              className="block p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 transition-colors bg-white cursor-pointer"
+            >
+              <h2 className="text-2xl font-semibold mb-2">⚙️ 设置</h2>
+              <p className="text-gray-600">
+                导出/导入数据，管理本地存储
               </p>
             </a>
           </div>
